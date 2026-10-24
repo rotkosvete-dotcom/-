@@ -4,13 +4,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import foxgirl.FoxGirlEntity;
 import foxgirl.FoxGirlMod;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.entity.model.EntityModel;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ResourceManager;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Рисует модель в формате BBS (model.bbs.json) напрямую, без конвертации.
+ * Рисует модель в формате BBS (foxgirl.json) напрямую, без конвертации.
  * Координаты BBS (Y вверх, ноги на 0) переводятся в пространство ванильных моделей
  * (x -> -x, y -> 24 - y), поэтому анимации написаны как у обычных мобов.
  */
@@ -42,38 +42,39 @@ public class FoxGirlModel extends EntityModel<FoxGirlEntity> {
 		final List<Part> children = new ArrayList<>();
 		Part(float px, float py, float pz) { this.px = px; this.py = py; this.pz = pz; }
 
-		void render(MatrixStack m, VertexConsumer vc, int light, int overlay, float r, float g, float b, float a) {
-			m.push();
+		void render(PoseStack m, VertexConsumer vc, int light, int overlay, float r, float g, float b, float a) {
+			m.pushPose();
 			m.translate(px / 16f, py / 16f, pz / 16f);
-			if (rx != 0 || ry != 0 || rz != 0) m.multiply(new Quaternionf().rotationZYX(rz, ry, rx));
+			if (rx != 0 || ry != 0 || rz != 0) m.mulPose(new Quaternionf().rotationZYX(rz, ry, rx));
 			m.translate(-px / 16f, -py / 16f, -pz / 16f);
 
-			MatrixStack.Entry e = m.peek();
-			Matrix4f pm = e.getPositionMatrix();
-			Matrix3f nm = e.getNormalMatrix();
+			PoseStack.Pose e = m.last();
+			Matrix4f pm = e.pose();
+			Matrix3f nm = e.normal();
 			for (Quad q : quads) {
 				for (int i = 0; i < 4; i++) {
 					vc.vertex(pm, q.p[i * 3] / 16f, q.p[i * 3 + 1] / 16f, q.p[i * 3 + 2] / 16f)
 						.color(r, g, b, a)
-						.texture(q.uv[i * 2], q.uv[i * 2 + 1])
-						.overlay(overlay)
-						.light(light)
+						.uv(q.uv[i * 2], q.uv[i * 2 + 1])
+						.overlayCoords(overlay)
+						.uv2(light)
 						.normal(nm, q.n[0], q.n[1], q.n[2])
-						.next();
+						.endVertex();
 				}
 			}
 			for (Part c : children) c.render(m, vc, light, overlay, r, g, b, a);
-			m.pop();
+			m.popPose();
 		}
 	}
 
 	private final Part root;
 	private final Map<String, Part> parts = new HashMap<>();
+	private boolean sitting;
 
 	public FoxGirlModel(ResourceManager rm) {
 		super();
 		Part loadedRoot = null;
-		try (BufferedReader reader = rm.getResource(new Identifier(FoxGirlMod.MOD_ID, "bbs/foxgirl.json")).get().getReader()) {
+		try (BufferedReader reader = rm.getResource(new ResourceLocation(FoxGirlMod.MOD_ID, "bbs/foxgirl.json")).get().openAsReader()) {
 			JsonObject model = JsonParser.parseReader(reader).getAsJsonObject().getAsJsonObject("model");
 			JsonArray texSize = model.getAsJsonArray("texture");
 			float tw = texSize.get(0).getAsFloat(), th = texSize.get(1).getAsFloat();
@@ -203,41 +204,39 @@ public class FoxGirlModel extends EntityModel<FoxGirlEntity> {
 		if (part != null) { part.rx = x; part.ry = y; part.rz = z; }
 	}
 
-	private boolean sitting;
-
 	@Override
-	public void setAngles(FoxGirlEntity e, float limbAngle, float limbDistance, float age, float headYaw, float headPitch) {
+	public void setupAnim(FoxGirlEntity e, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
 		for (Part part : parts.values()) { part.rx = 0; part.ry = 0; part.rz = 0; }
 		sitting = e.isInSittingPose();
 
-		set(p("Head"), headPitch * DEG, headYaw * DEG, 0);
+		set(p("Head"), headPitch * DEG, netHeadYaw * DEG, 0);
 
-		float swing = limbAngle * 0.6662f;
-		float lSwing = sitting ? 0 : limbDistance;
-		set(p("LeftArms"), (float) Math.cos(swing) * lSwing, 0, 0.03f * (float) Math.sin(age * 0.067f));
-		set(p("RightArms"), (float) Math.cos(swing + Math.PI) * lSwing, 0, -0.03f * (float) Math.sin(age * 0.067f));
+		float swing = limbSwing * 0.6662f;
+		float armAmount = sitting ? 0 : limbSwingAmount;
+		set(p("LeftArms"), (float) Math.cos(swing) * armAmount, 0, 0.03f * (float) Math.sin(ageInTicks * 0.067f));
+		set(p("RightArms"), (float) Math.cos(swing + Math.PI) * armAmount, 0, -0.03f * (float) Math.sin(ageInTicks * 0.067f));
 
 		if (sitting) {
 			set(p("LeftLeg"), -1.4f, 0.3f, 0);
 			set(p("RightLeg"), -1.4f, -0.3f, 0);
 		} else {
-			set(p("LeftLeg"), (float) Math.cos(swing + Math.PI) * 1.4f * limbDistance, 0, 0);
-			set(p("RightLeg"), (float) Math.cos(swing) * 1.4f * limbDistance, 0, 0);
+			set(p("LeftLeg"), (float) Math.cos(swing + Math.PI) * 1.4f * limbSwingAmount, 0, 0);
+			set(p("RightLeg"), (float) Math.cos(swing) * 1.4f * limbSwingAmount, 0, 0);
 		}
 
 		// хвост виляет
-		set(p("Tail"), -0.15f + limbDistance * 0.3f, (float) Math.sin(age * 0.12f) * 0.3f, 0);
+		set(p("Tail"), -0.15f + limbSwingAmount * 0.3f, (float) Math.sin(ageInTicks * 0.12f) * 0.3f, 0);
 		// ушки чуть подёргиваются
-		float twitch = (float) Math.max(0, Math.sin(age * 0.05f)) * 0.08f;
+		float twitch = (float) Math.max(0, Math.sin(ageInTicks * 0.05f)) * 0.08f;
 		set(p("LeftEar"), 0, 0, twitch);
 		set(p("RightEar"), 0, 0, -twitch);
 	}
 
 	@Override
-	public void render(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, float r, float g, float b, float a) {
-		matrices.push();
-		if (sitting) matrices.translate(0, 10 / 16f, 0); // в этом пространстве +Y = вниз
-		root.render(matrices, vertices, light, overlay, r, g, b, a);
-		matrices.pop();
+	public void renderToBuffer(PoseStack poseStack, VertexConsumer vc, int light, int overlay, float r, float g, float b, float a) {
+		poseStack.pushPose();
+		if (sitting) poseStack.translate(0, 10 / 16f, 0); // в этом пространстве +Y = вниз
+		root.render(poseStack, vc, light, overlay, r, g, b, a);
+		poseStack.popPose();
 	}
 }

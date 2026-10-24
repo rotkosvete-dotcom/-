@@ -1,53 +1,61 @@
 package foxgirl;
 
-import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.biome.v1.BiomeModifications;
-import net.fabricmc.fabric.api.biome.v1.BiomeSelectors;
-import net.fabricmc.fabric.api.item.v1.FabricItemSettings;
-import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
-import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
-import net.fabricmc.fabric.api.object.builder.v1.entity.FabricEntityTypeBuilder;
-import net.minecraft.entity.EntityDimensions;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.SpawnGroup;
-import net.minecraft.entity.SpawnRestriction;
-import net.minecraft.entity.passive.AnimalEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroups;
-import net.minecraft.item.SpawnEggItem;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
-import net.minecraft.util.Identifier;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.biome.BiomeKeys;
+import com.mojang.serialization.Codec;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraftforge.common.ForgeSpawnEggItem;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
 
-public class FoxGirlMod implements ModInitializer {
+@Mod(FoxGirlMod.MOD_ID)
+public class FoxGirlMod {
 	public static final String MOD_ID = "foxgirl";
 
-	public static final EntityType<FoxGirlEntity> FOX_GIRL = Registry.register(
-		Registries.ENTITY_TYPE, new Identifier(MOD_ID, "fox_girl"),
-		FabricEntityTypeBuilder.create(SpawnGroup.CREATURE, FoxGirlEntity::new)
-			.dimensions(EntityDimensions.fixed(0.6f, 1.9f))
-			.trackRangeBlocks(10)
+	public static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, MOD_ID);
+	public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
+	public static final DeferredRegister<CreativeModeTab> TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
+	public static final DeferredRegister<Codec<? extends ChunkGenerator>> GENERATORS = DeferredRegister.create(Registries.CHUNK_GENERATOR, MOD_ID);
+
+	public static final RegistryObject<EntityType<FoxGirlEntity>> FOX_GIRL = ENTITIES.register("fox_girl",
+		() -> EntityType.Builder.of(FoxGirlEntity::new, MobCategory.CREATURE)
+			.sized(0.6f, 1.9f)
+			.clientTrackingRange(10)
+			.build("fox_girl"));
+
+	public static final RegistryObject<Item> SPAWN_EGG = ITEMS.register("fox_girl_spawn_egg",
+		() -> new ForgeSpawnEggItem(FOX_GIRL, 0x7A2E3C, 0xF0A030, new Item.Properties()));
+
+	public static final RegistryObject<Item> ALMOND_WATER = ITEMS.register("almond_water",
+		() -> new AlmondWaterItem(new Item.Properties().stacksTo(16)));
+
+	public static final RegistryObject<CreativeModeTab> TAB = TABS.register("foxgirl",
+		() -> CreativeModeTab.builder()
+			.title(Component.translatable("itemGroup.foxgirl"))
+			.icon(() -> new ItemStack(SPAWN_EGG.get()))
+			.displayItems((params, output) -> {
+				output.accept(SPAWN_EGG.get());
+				output.accept(ALMOND_WATER.get());
+			})
 			.build());
 
-	public static final Item SPAWN_EGG = Registry.register(
-		Registries.ITEM, new Identifier(MOD_ID, "fox_girl_spawn_egg"),
-		new SpawnEggItem(FOX_GIRL, 0x7A2E3C, 0xF0A030, new FabricItemSettings()));
+	public static final RegistryObject<Codec<? extends ChunkGenerator>> BACKROOMS_GENERATOR =
+		GENERATORS.register("backrooms", () -> BackroomsGenerator.CODEC);
 
-	@Override
-	public void onInitialize() {
-		FabricDefaultAttributeRegistry.register(FOX_GIRL, FoxGirlEntity.createAttributes());
-
-		ItemGroupEvents.modifyEntriesEvent(ItemGroups.SPAWN_EGGS).register(entries -> entries.add(SPAWN_EGG));
-
-		SpawnRestriction.register(FOX_GIRL, SpawnRestriction.Location.ON_GROUND,
-			Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, AnimalEntity::isValidNaturalSpawn);
-
-		// Дикие лисички встречаются в лесах и тайге (редко, по одной)
-		BiomeModifications.addSpawn(
-			BiomeSelectors.includeByKey(BiomeKeys.FOREST, BiomeKeys.BIRCH_FOREST, BiomeKeys.FLOWER_FOREST,
-				BiomeKeys.TAIGA, BiomeKeys.SNOWY_TAIGA, BiomeKeys.OLD_GROWTH_PINE_TAIGA),
-			SpawnGroup.CREATURE, FOX_GIRL, 3, 1, 1);
+	public FoxGirlMod() {
+		IEventBus bus = FMLJavaModLoadingContext.get().getModEventBus();
+		ENTITIES.register(bus);
+		ITEMS.register(bus);
+		TABS.register(bus);
+		GENERATORS.register(bus);
 	}
 }
