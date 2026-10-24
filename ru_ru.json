@@ -1,0 +1,8 @@
+{
+  "entity.foxgirl.fox_girl": "Лисичка",
+  "item.foxgirl.fox_girl_spawn_egg": "Яйцо призыва лисички",
+  "message.foxgirl.tamed": "Лисичка тебе доверяет!",
+  "message.foxgirl.hungry": "Твоя лисичка голодна! Покорми её.",
+  "message.foxgirl.sit": "Она сидит и ждёт.",
+  "message.foxgirl.follow": "Она идёт за тобой."
+}
